@@ -201,25 +201,6 @@ class AudioPlayer {
         });
       });
     }
-    _removeOldAssetCacheDir();
-  }
-
-  /// Old versions of just_audio used an asset caching system that created a
-  /// separate cache file per asset per player instance, and was highly
-  /// dependent on the app calling [dispose] to clean up afterwards. If the app
-  /// is upgrading from an old version of just_audio, this will delete the old
-  /// cache directory.
-  Future<void> _removeOldAssetCacheDir() async {
-    if (kIsWeb) return;
-    final oldAssetCacheDir = Directory(
-        p.join((await getTemporaryDirectory()).path, 'just_audio_asset_cache'));
-    if (oldAssetCacheDir.existsSync()) {
-      try {
-        oldAssetCacheDir.deleteSync(recursive: true);
-      } catch (e) {
-        print("Failed to delete old asset cache dir: $e");
-      }
-    }
   }
 
   /// The latest [PlaybackEvent].
@@ -712,28 +693,24 @@ class AudioPlayer {
     _playingSubject.add(true);
     _playbackEventSubject.add(_playbackEvent);
     final playCompleter = Completer();
-    final audioSession = await AudioSession.instance;
-    if (await audioSession.setActive(true)) {
-      // TODO: rewrite this to more cleanly handle simultaneous load/play
-      // requests which each may result in platform play requests.
-      final requireActive = _audioSource != null;
-      if (requireActive) {
-        if (_active) {
-          // If the native platform is already active, send it a play request.
-          // NOTE: If a load() request happens simultaneously, this may result
-          // in two play requests being sent. The platform implementation should
-          // ignore the second play request since it is already playing.
-          _sendPlayRequest(await _platform, playCompleter);
-        } else {
-          // If the native platform wasn't already active, activating it will
-          // implicitly restore the playing state and send a play request.
-          _setPlatformActive(true, playCompleter);
-        }
+
+    // TODO: rewrite this to more cleanly handle simultaneous load/play
+    // requests which each may result in platform play requests.
+    final requireActive = _audioSource != null;
+    if (requireActive) {
+      if (_active) {
+        // If the native platform is already active, send it a play request.
+        // NOTE: If a load() request happens simultaneously, this may result
+        // in two play requests being sent. The platform implementation should
+        // ignore the second play request since it is already playing.
+        _sendPlayRequest(await _platform, playCompleter);
+      } else {
+        // If the native platform wasn't already active, activating it will
+        // implicitly restore the playing state and send a play request.
+        _setPlatformActive(true, playCompleter);
       }
-    } else {
-      // Revert if we fail to activate the audio session.
-      _playingSubject.add(false);
     }
+
     await playCompleter.future;
   }
 
